@@ -8,6 +8,7 @@ type Episode = {
   id: string
   seed_text: string
   summary_text: string | null
+  chat_log: { role: string; parts: string }[]
   created_at: string
 }
 
@@ -33,7 +34,7 @@ export default function HomePage() {
 
       const { data } = await supabase
         .from('episodes')
-        .select('id, seed_text, summary_text, created_at')
+        .select('id, seed_text, summary_text, chat_log, created_at')
         .eq('date', todayISO)
         .order('created_at', { ascending: false })
 
@@ -205,6 +206,15 @@ export default function HomePage() {
                         💬 AIと話して日記にする
                       </button>
                     </>
+                  )}
+                  {ep.summary_text && ep.chat_log?.length > 0 && (
+                    <button
+                      className="btn-secondary"
+                      onClick={() => router.push(`/chat?episodeId=${ep.id}&resume=true`)}
+                      style={{ fontSize: 13, minHeight: 38, marginTop: 8 }}
+                    >
+                      💬 AIと話を再開する
+                    </button>
                   )}
                 </>
               )}

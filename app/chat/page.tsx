@@ -10,6 +10,7 @@ function ChatContent() {
   const searchParams = useSearchParams()
   const paramSeed = searchParams.get('seed') || ''
   const paramEpisodeId = searchParams.get('episodeId') || null
+  const paramResume = searchParams.get('resume') === 'true'
 
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -26,12 +27,29 @@ function ChatContent() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // 一言メモから展開する場合、マウント時に自動でチャット開始
   useEffect(() => {
-    if (paramSeed) {
+    if (paramResume && paramEpisodeId) {
+      loadAndResumeChat()
+    } else if (paramSeed) {
       startChatWithSeed(paramSeed)
     }
   }, [])
+
+  async function loadAndResumeChat() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('episodes')
+      .select('seed_text, chat_log')
+      .eq('id', paramEpisodeId)
+      .single()
+
+    if (data) {
+      setSeedText(data.seed_text)
+      setMessages(data.chat_log || [])
+      setPhase('chat')
+    }
+    setLoading(false)
+  }
 
   async function startChatWithSeed(seed: string) {
     setPhase('chat')
@@ -143,10 +161,10 @@ function ChatContent() {
         </button>
         <div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>
-            {paramEpisodeId ? 'メモから日記を作る' : '出来事を記録する'}
+            {paramResume ? '会話を再開する' : paramEpisodeId ? 'メモから日記を作る' : '出来事を記録する'}
           </div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            {paramEpisodeId ? 'AIが話を広げてくれます' : 'メモだけ残すか、AIと話を広げるか選べます'}
+            {paramResume ? '続きをAIと話しましょう' : paramEpisodeId ? 'AIが話を広げてくれます' : 'メモだけ残すか、AIと話を広げるか選べます'}
           </div>
         </div>
       </header>
