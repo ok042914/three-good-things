@@ -195,7 +195,16 @@ export default function HomePage() {
                     <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>{ep.summary_text}</div>
                   )}
                   {!ep.summary_text && (
-                    <div style={{ fontSize: 12, color: '#CBD5E0', fontStyle: 'italic' }}>一言メモ（日記未作成）</div>
+                    <>
+                      <div style={{ fontSize: 12, color: '#CBD5E0', fontStyle: 'italic', marginBottom: 8 }}>一言メモ（日記未作成）</div>
+                      <button
+                        className="btn-secondary"
+                        onClick={() => router.push(`/chat?seed=${encodeURIComponent(ep.seed_text)}&episodeId=${ep.id}`)}
+                        style={{ fontSize: 13, minHeight: 38 }}
+                      >
+                        💬 AIと話して日記にする
+                      </button>
+                    </>
                   )}
                 </>
               )}

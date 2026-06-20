@@ -2,14 +2,18 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type Message = { role: 'user' | 'model'; parts: string }
 
 export default function ChatPage() {
+  const searchParams = useSearchParams()
+  const paramSeed = searchParams.get('seed') || ''
+  const paramEpisodeId = searchParams.get('episodeId') || null
+
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [seedText, setSeedText] = useState('')
+  const [seedText, setSeedText] = useState(paramSeed)
   const [phase, setPhase] = useState<'seed' | 'chat'>('seed')
   const [loading, setLoading] = useState(false)
   const [readyToSave, setReadyToSave] = useState(false)
@@ -21,6 +25,31 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // 一言メモから展開する場合、マウント時に自動でチャット開始
+  useEffect(() => {
+    if (paramSeed) {
+      startChatWithSeed(paramSeed)
+    }
+  }, [])
+
+  async function startChatWithSeed(seed: string) {
+    setPhase('chat')
+    setLoading(true)
+
+    const firstMessage: Message = { role: 'user', parts: seed }
+    setMessages([firstMessage])
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: [], message: seed }),
+    })
+    const data = await res.json()
+    setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
+    setReadyToSave(data.readyToSave)
+    setLoading(false)
+  }
 
   async function saveMemo() {
     if (!seedText.trim()) return
@@ -41,21 +70,7 @@ export default function ChatPage() {
 
   async function startChat() {
     if (!seedText.trim()) return
-    setPhase('chat')
-    setLoading(true)
-
-    const firstMessage: Message = { role: 'user', parts: seedText.trim() }
-    setMessages([firstMessage])
-
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: [], message: seedText.trim() }),
-    })
-    const data = await res.json()
-    setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
-    setReadyToSave(data.readyToSave)
-    setLoading(false)
+    startChatWithSeed(seedText.trim())
   }
 
   async function sendMessage() {
@@ -90,14 +105,22 @@ export default function ChatPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const todayISO = new Date().toISOString().split('T')[0]
-    await supabase.from('episodes').insert({
-      user_id: user.id,
-      date: todayISO,
-      seed_text: seedText.trim(),
-      chat_log: messages,
-      summary_text: summaryText,
-    })
+    if (paramEpisodeId) {
+      // 既存の一言メモを日記として更新
+      await supabase.from('episodes').update({
+        chat_log: messages,
+        summary_text: summaryText,
+      }).eq('id', paramEpisodeId)
+    } else {
+      const todayISO = new Date().toISOString().split('T')[0]
+      await supabase.from('episodes').insert({
+        user_id: user.id,
+        date: todayISO,
+        seed_text: seedText.trim(),
+        chat_log: messages,
+        summary_text: summaryText,
+      })
+    }
 
     router.push('/')
   }
@@ -119,8 +142,12 @@ export default function ChatPage() {
           ←
         </button>
         <div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>出来事を記録する</div>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>メモだけ残すか、AIと話を広げるか選べます</div>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>
+            {paramEpisodeId ? 'メモから日記を作る' : '出来事を記録する'}
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>
+            {paramEpisodeId ? 'AIが話を広げてくれます' : 'メモだけ残すか、AIと話を広げるか選べます'}
+          </div>
         </div>
       </header>
 
