@@ -232,7 +232,7 @@ export default function HomePage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#CBD5E0', fontSize: 11, padding: '4px 0 12px' }}>
-        v1.1.0 — 2026-06-20
+        v1.2.0 — 2026-06-20
       </p>
     </div>
   )
