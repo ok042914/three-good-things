@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { NextRequest, NextResponse } from 'next/server'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,8 +16,6 @@ export async function POST(req: NextRequest) {
     const formattedDate = new Date(date).toLocaleDateString('ja-JP', {
       year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
     })
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
     const prompt = `あなたはポジティブ心理学を活用したジャーナリングコーチです。
 ユーザーが今日記録したエピソードから、最もよかった3つを選び、
@@ -54,8 +52,12 @@ ${formattedDate}
 
 ✨ （今日の一言：30〜50字の励ましや気づき）`
 
-    const result = await model.generateContent(prompt)
-    const summary = result.response.text().trim()
+    const response = await ai.models.generateContent({
+      model: 'gemini-flash-latest',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    })
+
+    const summary = (response.text ?? '').trim()
 
     return NextResponse.json({ summary })
   } catch (error) {

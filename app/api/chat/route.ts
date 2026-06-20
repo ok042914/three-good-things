@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { NextRequest, NextResponse } from 'next/server'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
 const SYSTEM_INSTRUCTION = `あなたはやさしいジャーナリングコーチです。
 ユーザーが話す今日のよかった出来事を、後から読み返しても状況が伝わるよう
@@ -18,26 +18,28 @@ export async function POST(req: NextRequest) {
   try {
     const { history, message } = await req.json()
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction: SYSTEM_INSTRUCTION,
-    })
-
-    const chat = model.startChat({
-      history: history.map((m: { role: string; parts: string }) => ({
-        role: m.role,
+    const contents = [
+      ...history.map((m: { role: string; parts: string }) => ({
+        role: m.role as 'user' | 'model',
         parts: [{ text: m.parts }],
       })),
+      { role: 'user' as const, parts: [{ text: message }] },
+    ]
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-flash-latest',
+      contents,
+      config: { systemInstruction: SYSTEM_INSTRUCTION },
     })
 
-    const result = await chat.sendMessage(message)
-    const rawReply = result.response.text()
+    const rawReply = response.text ?? ''
     const readyToSave = rawReply.includes('[READY_TO_SAVE]')
     const reply = rawReply.replace('[READY_TO_SAVE]', '').trim()
 
     return NextResponse.json({ reply, readyToSave })
   } catch (error) {
-    console.error('chat error:', error)
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('chat error:', msg)
     return NextResponse.json({ reply: '申し訳ありません、エラーが発生しました。', readyToSave: false }, { status: 500 })
   }
 }
