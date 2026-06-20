@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 type Message = { role: 'user' | 'model'; parts: string }
 
-export default function ChatPage() {
+function ChatContent() {
   const searchParams = useSearchParams()
   const paramSeed = searchParams.get('seed') || ''
   const paramEpisodeId = searchParams.get('episodeId') || null
@@ -279,5 +279,17 @@ export default function ChatPage() {
         </>
       )}
     </div>
+  )
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+        読み込み中…
+      </div>
+    }>
+      <ChatContent />
+    </Suspense>
   )
 }
