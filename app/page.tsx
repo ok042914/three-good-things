@@ -14,6 +14,10 @@ type Episode = {
 export default function HomePage() {
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editSeed, setEditSeed] = useState('')
+  const [editSummary, setEditSummary] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -42,6 +46,32 @@ export default function HomePage() {
   async function deleteEpisode(id: string) {
     await supabase.from('episodes').delete().eq('id', id)
     setEpisodes(prev => prev.filter(e => e.id !== id))
+    if (editingId === id) setEditingId(null)
+  }
+
+  function startEdit(ep: Episode) {
+    setEditingId(ep.id)
+    setEditSeed(ep.seed_text)
+    setEditSummary(ep.summary_text || '')
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+  }
+
+  async function saveEdit(id: string) {
+    setEditSaving(true)
+    await supabase.from('episodes').update({
+      seed_text: editSeed.trim(),
+      summary_text: editSummary.trim() || null,
+    }).eq('id', id)
+    setEpisodes(prev => prev.map(ep =>
+      ep.id === id
+        ? { ...ep, seed_text: editSeed.trim(), summary_text: editSummary.trim() || null }
+        : ep
+    ))
+    setEditSaving(false)
+    setEditingId(null)
   }
 
   async function handleLogout() {
@@ -51,7 +81,6 @@ export default function HomePage() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* ヘッダー */}
       <header style={{
         background: 'var(--main)',
         color: 'white',
@@ -104,17 +133,73 @@ export default function HomePage() {
                 }}>
                   出来事 {episodes.length - i}
                 </div>
-                <button
-                  onClick={() => deleteEpisode(ep.id)}
-                  style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
-                >
-                  ×
-                </button>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {editingId !== ep.id && (
+                    <button
+                      onClick={() => startEdit(ep)}
+                      style={{ background: 'none', border: 'none', color: '#A0AEC0', fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+                      title="編集"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                  <button
+                    onClick={() => deleteEpisode(ep.id)}
+                    style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+                    title="削除"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
-              <div style={{ fontWeight: 600, marginBottom: ep.summary_text ? 6 : 0 }}>{ep.seed_text}</div>
-              {ep.summary_text && (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>{ep.summary_text}</div>
+
+              {editingId === ep.id ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>一言メモ</div>
+                  <textarea
+                    value={editSeed}
+                    onChange={e => setEditSeed(e.target.value)}
+                    rows={2}
+                    style={{ minHeight: 44 }}
+                  />
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 2 }}>日記メモ</div>
+                  <textarea
+                    value={editSummary}
+                    onChange={e => setEditSummary(e.target.value)}
+                    rows={4}
+                    placeholder="（未入力の場合は空欄で保存されます）"
+                  />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button
+                      className="btn-primary"
+                      onClick={() => saveEdit(ep.id)}
+                      disabled={editSaving || !editSeed.trim()}
+                      style={{ flex: 2 }}
+                    >
+                      {editSaving ? '保存中…' : '保存する'}
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={cancelEdit}
+                      disabled={editSaving}
+                      style={{ flex: 1 }}
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 600, marginBottom: ep.summary_text ? 6 : 0 }}>{ep.seed_text}</div>
+                  {ep.summary_text && (
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>{ep.summary_text}</div>
+                  )}
+                  {!ep.summary_text && (
+                    <div style={{ fontSize: 12, color: '#CBD5E0', fontStyle: 'italic' }}>一言メモ（日記未作成）</div>
+                  )}
+                </>
               )}
+
               <div style={{ fontSize: 11, color: '#CBD5E0', marginTop: 8 }}>
                 {new Date(ep.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
               </div>
@@ -123,7 +208,6 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* 下部アクションバー */}
       <div style={{ padding: 16, borderTop: '1px solid #E2E8F0', background: 'white', display: 'flex', gap: 8 }}>
         <button className="btn-secondary" onClick={() => router.push('/history')} style={{ flex: 1 }}>
           📖 履歴
@@ -139,7 +223,7 @@ export default function HomePage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#CBD5E0', fontSize: 11, padding: '4px 0 12px' }}>
-        v1.0.0 — 2026-06-20
+        v1.1.0 — 2026-06-20
       </p>
     </div>
   )

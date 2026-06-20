@@ -22,6 +22,23 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  async function saveMemo() {
+    if (!seedText.trim()) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/login'); return }
+
+    const todayISO = new Date().toISOString().split('T')[0]
+    await supabase.from('episodes').insert({
+      user_id: user.id,
+      date: todayISO,
+      seed_text: seedText.trim(),
+      chat_log: [],
+      summary_text: null,
+    })
+    router.push('/')
+  }
+
   async function startChat() {
     if (!seedText.trim()) return
     setPhase('chat')
@@ -63,7 +80,6 @@ export default function ChatPage() {
   async function saveEpisode() {
     setSaving(true)
 
-    // エピソードのまとめをAIに生成させる
     const summaryRes = await fetch('/api/episode-summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -88,7 +104,6 @@ export default function ChatPage() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* ヘッダー */}
       <header style={{
         background: 'var(--main)',
         color: 'white',
@@ -105,17 +120,16 @@ export default function ChatPage() {
         </button>
         <div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>出来事を記録する</div>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>AIがくわしく聞きます</div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>メモだけ残すか、AIと話を広げるか選べます</div>
         </div>
       </header>
 
       {phase === 'seed' ? (
-        /* タネ入力フェーズ */
         <div style={{ padding: 16, flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="card" style={{ background: '#FFF9F9' }}>
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: 'var(--text-muted)' }}>
-              今日起きたよかった出来事を一言で教えてください。<br />
-              その後、AIがくわしく聞いてくれます。
+              今日の出来事やテーマを一言で入力してください。<br />
+              そのまま保存するか、AIと話を広げて日記にするか選べます。
             </p>
           </div>
           <textarea
@@ -125,12 +139,24 @@ export default function ChatPage() {
             rows={3}
             autoFocus
           />
-          <button className="btn-primary" onClick={startChat} disabled={!seedText.trim()}>
-            記録を始める →
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              className="btn-primary"
+              onClick={startChat}
+              disabled={!seedText.trim() || saving}
+            >
+              💬 AIと話を広げる →
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={saveMemo}
+              disabled={!seedText.trim() || saving}
+            >
+              {saving ? '保存中…' : '📝 一言メモとして保存する'}
+            </button>
+          </div>
         </div>
       ) : (
-        /* チャットフェーズ */
         <>
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {messages.map((msg, i) => (
@@ -172,9 +198,8 @@ export default function ChatPage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* 入力エリア */}
           <div style={{ borderTop: '1px solid #E2E8F0', background: 'white', padding: 12 }}>
-            {readyToSave && (
+            {readyToSave ? (
               <button
                 className="btn-primary"
                 onClick={saveEpisode}
@@ -183,6 +208,17 @@ export default function ChatPage() {
               >
                 {saving ? '保存中…' : '✅ この内容で記録する'}
               </button>
+            ) : (
+              messages.length >= 2 && (
+                <button
+                  className="btn-secondary"
+                  onClick={saveEpisode}
+                  disabled={saving}
+                  style={{ marginBottom: 10 }}
+                >
+                  {saving ? '保存中…' : '💾 途中で保存する'}
+                </button>
+              )
             )}
             <div style={{ display: 'flex', gap: 8 }}>
               <textarea
