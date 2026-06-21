@@ -11,6 +11,7 @@ function SummaryContent() {
   const [summary, setSummary] = useState('')
   const [otherEvents, setOtherEvents] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [apiError, setApiError] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -24,6 +25,7 @@ function SummaryContent() {
   async function generateSummary() {
     setLoading(true)
     setSaved(false)
+    setApiError('')
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
@@ -62,6 +64,11 @@ function SummaryContent() {
       }),
     })
     const data = await res.json()
+    if (!res.ok) {
+      setApiError(data.error || 'AIの呼び出しに失敗しました。しばらく待ってからやり直してください。')
+      setLoading(false)
+      return
+    }
     setSummary(data.summary)
     setOtherEvents(data.otherEvents ?? [])
     setLoading(false)
@@ -125,6 +132,16 @@ function SummaryContent() {
             <div style={{ fontSize: 40 }}>✨</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>AIが振り返っています…</div>
           </div>
+        ) : apiError ? (
+          <>
+            <div className="card" style={{ background: '#FFF5F5', borderLeft: '4px solid #FC8181' }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#C53030', marginBottom: 6 }}>エラーが発生しました</div>
+              <div style={{ fontSize: 12, color: '#744210', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>{apiError}</div>
+            </div>
+            <button className="btn-secondary" onClick={generateSummary}>
+              🔄 やり直す
+            </button>
+          </>
         ) : (
           <>
             <div className="card" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.85, fontSize: 14 }}>

@@ -122,7 +122,8 @@ ${allEventTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
 
     return NextResponse.json({ summary, otherEvents })
   } catch (error) {
-    console.error('summarize error:', error)
-    return NextResponse.json({ summary: '', otherEvents: [] }, { status: 500 })
+    const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    console.error('summarize error:', msg)
+    return NextResponse.json({ summary: '', otherEvents: [], error: msg }, { status: 500 })
   }
 }
