@@ -162,7 +162,7 @@ function SummaryContent() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '8px 0 12px' }}>
-        v1.6.0 — 2026-06-21
+        v1.6.0 — 2026-06-21 20:37
       </p>
     </div>
   )
