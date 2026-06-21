@@ -84,7 +84,11 @@ function SummaryContent() {
   }
 
   async function copyToClipboard() {
-    await navigator.clipboard.writeText(summary)
+    let text = summary
+    if (otherEvents.length > 0) {
+      text += '\n\n【その他】\n\n' + otherEvents.map(ev => `・${ev}`).join('\n\n')
+    }
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -158,7 +162,7 @@ function SummaryContent() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '8px 0 12px' }}>
-        v1.5.0 — 2026-06-21 10:15
+        v1.6.0 — 2026-06-21
       </p>
     </div>
   )

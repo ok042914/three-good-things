@@ -300,8 +300,8 @@ export default function HomePage() {
                       <span style={{
                         fontSize: 14,
                         flex: 1,
-                        color: sc.status === 'completed' ? 'var(--text-muted)' : 'var(--text)',
-                        textDecoration: sc.status === 'completed' ? 'line-through' : 'none',
+                        color: 'var(--text)',
+                        textDecoration: 'none',
                       }}>
                         {sc.content}
                       </span>
@@ -497,7 +497,7 @@ export default function HomePage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '4px 0 12px' }}>
-        v1.5.0 — 2026-06-21 10:15
+        v1.6.0 — 2026-06-21
       </p>
     </div>
   )
