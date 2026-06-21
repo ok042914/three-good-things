@@ -107,8 +107,8 @@ export default function LoginPage() {
         </button>
       </div>
 
-      <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, marginTop: 32 }}>
-        v1.0.0 — 2026-06-20
+      <p style={{ textAlign: 'center', color: '#000', fontSize: 12, marginTop: 32 }}>
+        v1.4.0 — 2026-06-21 09:32
       </p>
     </div>
   )

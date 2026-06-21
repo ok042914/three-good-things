@@ -446,8 +446,8 @@ export default function HomePage() {
         )}
       </div>
 
-      <p style={{ textAlign: 'center', color: '#CBD5E0', fontSize: 11, padding: '4px 0 12px' }}>
-        v1.3.0 — 2026-06-21
+      <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '4px 0 12px' }}>
+        v1.4.0 — 2026-06-21 09:32
       </p>
     </div>
   )
