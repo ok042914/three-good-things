@@ -1,19 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function SummaryPage() {
+function SummaryContent() {
+  const searchParams = useSearchParams()
+  const dateParam = searchParams.get('date') || new Date().toISOString().split('T')[0]
+
   const [summary, setSummary] = useState('')
+  const [otherEvents, setOtherEvents] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
   const router = useRouter()
   const supabase = createClient()
-
-  const todayISO = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
     generateSummary()
@@ -29,25 +31,36 @@ export default function SummaryPage() {
     const { data: episodes } = await supabase
       .from('episodes')
       .select('seed_text, summary_text')
-      .eq('date', todayISO)
+      .eq('date', dateParam)
       .order('created_at', { ascending: true })
 
+    // completedなスケジュールも候補に含める
+    const { data: schedules } = await supabase
+      .from('schedule')
+      .select('content')
+      .eq('date', dateParam)
+      .eq('status', 'completed')
+
     if (!episodes || episodes.length === 0) {
-      setSummary('今日の記録がありません。ホームに戻って出来事を記録してください。')
+      setSummary('この日の記録がありません。ホームに戻って出来事を記録してください。')
       setLoading(false)
       return
     }
+
+    const completedSchedules = (schedules || []).map(s => s.content)
 
     const res = await fetch('/api/summarize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         episodes: episodes.map(e => ({ seedText: e.seed_text, summaryText: e.summary_text })),
-        date: todayISO,
+        date: dateParam,
+        completedSchedules,
       }),
     })
     const data = await res.json()
     setSummary(data.summary)
+    setOtherEvents(data.otherEvents ?? [])
     setLoading(false)
   }
 
@@ -58,8 +71,9 @@ export default function SummaryPage() {
 
     await supabase.from('journals').upsert({
       user_id: user.id,
-      date: todayISO,
+      date: dateParam,
       summary,
+      other_events: otherEvents,
     }, { onConflict: 'user_id,date' })
 
     setSaved(true)
@@ -71,6 +85,10 @@ export default function SummaryPage() {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const formattedDate = new Date(dateParam).toLocaleDateString('ja-JP', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+  })
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -89,8 +107,8 @@ export default function SummaryPage() {
           ←
         </button>
         <div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>今日のまとめ</div>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>AIが3つのよかったことを生成しました</div>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>まとめ</div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>{formattedDate}</div>
         </div>
       </header>
 
@@ -98,13 +116,22 @@ export default function SummaryPage() {
         {loading ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
             <div style={{ fontSize: 40 }}>✨</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>AIが今日を振り返っています…</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>AIが振り返っています…</div>
           </div>
         ) : (
           <>
             <div className="card" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.85, fontSize: 14 }}>
               {summary}
             </div>
+
+            {otherEvents.length > 0 && (
+              <div className="card" style={{ background: '#F7FAFC' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>その他の出来事</div>
+                {otherEvents.map((ev, i) => (
+                  <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.8 }}>・{ev}</div>
+                ))}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn-secondary" onClick={copyToClipboard} style={{ flex: 1 }}>
@@ -128,8 +155,20 @@ export default function SummaryPage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#CBD5E0', fontSize: 11, padding: '8px 0 12px' }}>
-        v1.0.0 — 2026-06-20
+        v1.3.0 — 2026-06-21
       </p>
     </div>
+  )
+}
+
+export default function SummaryPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+        読み込み中…
+      </div>
+    }>
+      <SummaryContent />
+    </Suspense>
   )
 }

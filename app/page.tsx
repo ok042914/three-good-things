@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -12,37 +12,61 @@ type Episode = {
   created_at: string
 }
 
+type Schedule = {
+  id: string
+  content: string
+  status: 'planned' | 'completed'
+  created_at: string
+}
+
 export default function HomePage() {
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [episodes, setEpisodes] = useState<Episode[]>([])
+  const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editSeed, setEditSeed] = useState('')
   const [editSummary, setEditSummary] = useState('')
   const [editSaving, setEditSaving] = useState(false)
+  const [newSchedule, setNewSchedule] = useState('')
+  const [addingSchedule, setAddingSchedule] = useState(false)
+  const [showScheduleInput, setShowScheduleInput] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
-  const today = new Date().toLocaleDateString('ja-JP', {
-    year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
-  })
   const todayISO = new Date().toISOString().split('T')[0]
 
-  useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+  const loadData = useCallback(async (date: string) => {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/login'); return }
 
-      const { data } = await supabase
+    const [{ data: epData }, { data: scData }] = await Promise.all([
+      supabase
         .from('episodes')
         .select('id, seed_text, summary_text, chat_log, created_at')
-        .eq('date', todayISO)
-        .order('created_at', { ascending: false })
+        .eq('date', date)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('schedule')
+        .select('id, content, status, created_at')
+        .eq('date', date)
+        .order('created_at', { ascending: true }),
+    ])
 
-      setEpisodes(data || [])
-      setLoading(false)
-    }
-    load()
+    setEpisodes(epData || [])
+    setSchedules(scData || [])
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    loadData(selectedDate)
+  }, [selectedDate])
+
+  function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setSelectedDate(e.target.value)
+    setEditingId(null)
+  }
 
   async function deleteEpisode(id: string) {
     await supabase.from('episodes').delete().eq('id', id)
@@ -75,24 +99,63 @@ export default function HomePage() {
     setEditingId(null)
   }
 
+  async function addSchedule() {
+    if (!newSchedule.trim()) return
+    setAddingSchedule(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data } = await supabase.from('schedule').insert({
+      user_id: user.id,
+      date: selectedDate,
+      content: newSchedule.trim(),
+      status: 'planned',
+    }).select('id, content, status, created_at').single()
+
+    if (data) setSchedules(prev => [...prev, data])
+    setNewSchedule('')
+    setAddingSchedule(false)
+    setShowScheduleInput(false)
+  }
+
+  async function toggleSchedule(sc: Schedule) {
+    const newStatus = sc.status === 'planned' ? 'completed' : 'planned'
+    await supabase.from('schedule').update({ status: newStatus }).eq('id', sc.id)
+    setSchedules(prev => prev.map(s =>
+      s.id === sc.id ? { ...s, status: newStatus } : s
+    ))
+  }
+
+  async function deleteSchedule(id: string) {
+    await supabase.from('schedule').delete().eq('id', id)
+    setSchedules(prev => prev.filter(s => s.id !== id))
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  const isToday = selectedDate === todayISO
+  const isFuture = selectedDate > todayISO
+
+  const displayDate = new Date(selectedDate).toLocaleDateString('ja-JP', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+  })
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header style={{
         background: 'var(--main)',
         color: 'white',
-        padding: '16px',
+        padding: '12px 16px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
         <div>
           <div style={{ fontSize: 13, opacity: 0.85 }}>Three Good Things</div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>{today}</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{displayDate}</div>
         </div>
         <button
           onClick={handleLogout}
@@ -102,128 +165,268 @@ export default function HomePage() {
         </button>
       </header>
 
-      <div style={{ padding: 16, flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button className="btn-primary" onClick={() => router.push('/chat')}>
-          ＋ 新しい出来事を記録する
+      {/* 日付選択バー */}
+      <div style={{ background: 'white', borderBottom: '1px solid #E2E8F0', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={() => {
+            const d = new Date(selectedDate)
+            d.setDate(d.getDate() - 1)
+            setSelectedDate(d.toISOString().split('T')[0])
+          }}
+          style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 16, color: 'var(--text-muted)' }}
+        >
+          ‹
         </button>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={handleDateChange}
+          style={{
+            flex: 1,
+            border: '1px solid #E2E8F0',
+            borderRadius: 8,
+            padding: '7px 10px',
+            fontSize: 14,
+            color: 'var(--text)',
+            textAlign: 'center',
+          }}
+        />
+        <button
+          onClick={() => {
+            const d = new Date(selectedDate)
+            d.setDate(d.getDate() + 1)
+            setSelectedDate(d.toISOString().split('T')[0])
+          }}
+          style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 16, color: 'var(--text-muted)' }}
+        >
+          ›
+        </button>
+        {!isToday && (
+          <button
+            onClick={() => setSelectedDate(todayISO)}
+            style={{ background: 'var(--main-light)', border: 'none', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12, color: 'var(--main-dark)', whiteSpace: 'nowrap' }}
+          >
+            今日
+          </button>
+        )}
+      </div>
 
-        <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-muted)' }}>
-          今日の記録（{episodes.length}件）
-        </div>
+      <div style={{ padding: 16, flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-        {loading ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>読み込み中…</div>
-        ) : episodes.length === 0 ? (
-          <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
-            <div>今日はまだ記録がありません</div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>上のボタンから記録を始めましょう</div>
+        {/* スケジュールセクション */}
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>
+              {isFuture ? '📅 予定' : '📅 この日の予定'}
+            </div>
+            <button
+              onClick={() => setShowScheduleInput(v => !v)}
+              style={{ background: 'var(--main-light)', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: 'var(--main-dark)', cursor: 'pointer' }}
+            >
+              ＋ 追加
+            </button>
           </div>
-        ) : (
-          episodes.map((ep, i) => (
-            <div key={ep.id} className="card" style={{ position: 'relative' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{
-                  background: 'var(--main-light)',
-                  color: 'var(--main-dark)',
-                  borderRadius: 6,
-                  padding: '2px 8px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  marginBottom: 8,
-                }}>
-                  出来事 {episodes.length - i}
-                </div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {editingId !== ep.id && (
-                    <button
-                      onClick={() => startEdit(ep)}
-                      style={{ background: 'none', border: 'none', color: '#A0AEC0', fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
-                      title="編集"
-                    >
-                      ✏️
-                    </button>
-                  )}
+
+          {showScheduleInput && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <input
+                type="text"
+                value={newSchedule}
+                onChange={e => setNewSchedule(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addSchedule() }}
+                placeholder="予定を入力…"
+                autoFocus
+                style={{ flex: 1, border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px', fontSize: 14, minHeight: 40 }}
+              />
+              <button
+                onClick={addSchedule}
+                disabled={!newSchedule.trim() || addingSchedule}
+                style={{ background: 'var(--main)', border: 'none', borderRadius: 8, color: 'white', padding: '8px 12px', fontSize: 14, cursor: 'pointer', opacity: !newSchedule.trim() ? 0.5 : 1 }}
+              >
+                保存
+              </button>
+            </div>
+          )}
+
+          {schedules.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#CBD5E0', textAlign: 'center', padding: '8px 0' }}>
+              予定なし
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {schedules.map(sc => (
+                <div key={sc.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button
-                    onClick={() => deleteEpisode(ep.id)}
-                    style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
-                    title="削除"
+                    onClick={() => toggleSchedule(sc)}
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 4,
+                      border: sc.status === 'completed' ? '2px solid var(--main)' : '2px solid #CBD5E0',
+                      background: sc.status === 'completed' ? 'var(--main)' : 'white',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: 13,
+                    }}
+                  >
+                    {sc.status === 'completed' ? '✓' : ''}
+                  </button>
+                  <span style={{
+                    fontSize: 14,
+                    flex: 1,
+                    color: sc.status === 'completed' ? 'var(--text-muted)' : 'var(--text)',
+                    textDecoration: sc.status === 'completed' ? 'line-through' : 'none',
+                  }}>
+                    {sc.content}
+                  </span>
+                  <button
+                    onClick={() => deleteSchedule(sc.id)}
+                    style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
                   >
                     ×
                   </button>
                 </div>
-              </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-              {editingId === ep.id ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>一言メモ</div>
-                  <textarea
-                    value={editSeed}
-                    onChange={e => setEditSeed(e.target.value)}
-                    rows={2}
-                    style={{ minHeight: 44 }}
-                  />
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 2 }}>日記メモ</div>
-                  <textarea
-                    value={editSummary}
-                    onChange={e => setEditSummary(e.target.value)}
-                    rows={4}
-                    placeholder="（未入力の場合は空欄で保存されます）"
-                  />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button
-                      className="btn-primary"
-                      onClick={() => saveEdit(ep.id)}
-                      disabled={editSaving || !editSeed.trim()}
-                      style={{ flex: 2 }}
-                    >
-                      {editSaving ? '保存中…' : '保存する'}
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={cancelEdit}
-                      disabled={editSaving}
-                      style={{ flex: 1 }}
-                    >
-                      キャンセル
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ fontWeight: 600, marginBottom: ep.summary_text ? 6 : 0 }}>{ep.seed_text}</div>
-                  {ep.summary_text && (
-                    <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>{ep.summary_text}</div>
-                  )}
-                  {!ep.summary_text && (
-                    <>
-                      <div style={{ fontSize: 12, color: '#CBD5E0', fontStyle: 'italic', marginBottom: 8 }}>一言メモ（日記未作成）</div>
+        {/* 出来事セクション（未来日は非表示） */}
+        {!isFuture && (
+          <>
+            <button className="btn-primary" onClick={() => router.push(`/chat?date=${selectedDate}`)}>
+              ＋ 出来事を記録する
+            </button>
+
+            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-muted)' }}>
+              {isToday ? '今日' : 'この日'}の記録（{episodes.length}件）
+            </div>
+
+            {loading ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>読み込み中…</div>
+            ) : episodes.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
+                <div>記録がありません</div>
+                <div style={{ fontSize: 13, marginTop: 4 }}>上のボタンから記録を始めましょう</div>
+              </div>
+            ) : (
+              episodes.map((ep, i) => (
+                <div key={ep.id} className="card" style={{ position: 'relative' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{
+                      background: 'var(--main-light)',
+                      color: 'var(--main-dark)',
+                      borderRadius: 6,
+                      padding: '2px 8px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      marginBottom: 8,
+                    }}>
+                      出来事 {episodes.length - i}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {editingId !== ep.id && (
+                        <button
+                          onClick={() => startEdit(ep)}
+                          style={{ background: 'none', border: 'none', color: '#A0AEC0', fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+                          title="編集"
+                        >
+                          ✏️
+                        </button>
+                      )}
                       <button
-                        className="btn-secondary"
-                        onClick={() => router.push(`/chat?seed=${encodeURIComponent(ep.seed_text)}&episodeId=${ep.id}`)}
-                        style={{ fontSize: 13, minHeight: 38 }}
+                        onClick={() => deleteEpisode(ep.id)}
+                        style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+                        title="削除"
                       >
-                        💬 AIと話して日記にする
+                        ×
                       </button>
+                    </div>
+                  </div>
+
+                  {editingId === ep.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>一言メモ</div>
+                      <textarea
+                        value={editSeed}
+                        onChange={e => setEditSeed(e.target.value)}
+                        rows={2}
+                        style={{ minHeight: 44 }}
+                      />
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 2 }}>日記メモ</div>
+                      <textarea
+                        value={editSummary}
+                        onChange={e => setEditSummary(e.target.value)}
+                        rows={4}
+                        placeholder="（未入力の場合は空欄で保存されます）"
+                      />
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        <button
+                          className="btn-primary"
+                          onClick={() => saveEdit(ep.id)}
+                          disabled={editSaving || !editSeed.trim()}
+                          style={{ flex: 2 }}
+                        >
+                          {editSaving ? '保存中…' : '保存する'}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          onClick={cancelEdit}
+                          disabled={editSaving}
+                          style={{ flex: 1 }}
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontWeight: 600, marginBottom: ep.summary_text ? 6 : 0 }}>{ep.seed_text}</div>
+                      {ep.summary_text && (
+                        <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>{ep.summary_text}</div>
+                      )}
+                      {!ep.summary_text && (
+                        <>
+                          <div style={{ fontSize: 12, color: '#CBD5E0', fontStyle: 'italic', marginBottom: 8 }}>一言メモ（日記未作成）</div>
+                          <button
+                            className="btn-secondary"
+                            onClick={() => router.push(`/chat?seed=${encodeURIComponent(ep.seed_text)}&episodeId=${ep.id}`)}
+                            style={{ fontSize: 13, minHeight: 38 }}
+                          >
+                            💬 AIと話して日記にする
+                          </button>
+                        </>
+                      )}
+                      {ep.summary_text && ep.chat_log?.length > 0 && (
+                        <button
+                          className="btn-secondary"
+                          onClick={() => router.push(`/chat?episodeId=${ep.id}&resume=true`)}
+                          style={{ fontSize: 13, minHeight: 38, marginTop: 8 }}
+                        >
+                          💬 AIと話を再開する
+                        </button>
+                      )}
                     </>
                   )}
-                  {ep.summary_text && ep.chat_log?.length > 0 && (
-                    <button
-                      className="btn-secondary"
-                      onClick={() => router.push(`/chat?episodeId=${ep.id}&resume=true`)}
-                      style={{ fontSize: 13, minHeight: 38, marginTop: 8 }}
-                    >
-                      💬 AIと話を再開する
-                    </button>
-                  )}
-                </>
-              )}
 
-              <div style={{ fontSize: 11, color: '#CBD5E0', marginTop: 8 }}>
-                {new Date(ep.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-              </div>
-            </div>
-          ))
+                  <div style={{ fontSize: 11, color: '#CBD5E0', marginTop: 8 }}>
+                    {new Date(ep.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              ))
+            )}
+          </>
+        )}
+
+        {isFuture && (
+          <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>
+            <div style={{ fontSize: 13 }}>未来の日付は予定のみ登録できます</div>
+          </div>
         )}
       </div>
 
@@ -231,18 +434,20 @@ export default function HomePage() {
         <button className="btn-secondary" onClick={() => router.push('/history')} style={{ flex: 1 }}>
           📖 履歴
         </button>
-        <button
-          className="btn-primary"
-          onClick={() => router.push('/summary')}
-          disabled={episodes.length === 0}
-          style={{ flex: 2 }}
-        >
-          ✨ 今日をまとめる
-        </button>
+        {!isFuture && (
+          <button
+            className="btn-primary"
+            onClick={() => router.push(`/summary?date=${selectedDate}`)}
+            disabled={episodes.length === 0}
+            style={{ flex: 2 }}
+          >
+            ✨ まとめる
+          </button>
+        )}
       </div>
 
       <p style={{ textAlign: 'center', color: '#CBD5E0', fontSize: 11, padding: '4px 0 12px' }}>
-        v1.2.0 — 2026-06-20
+        v1.3.0 — 2026-06-21
       </p>
     </div>
   )

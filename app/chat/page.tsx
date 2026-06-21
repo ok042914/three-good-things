@@ -11,6 +11,7 @@ function ChatContent() {
   const paramSeed = searchParams.get('seed') || ''
   const paramEpisodeId = searchParams.get('episodeId') || null
   const paramResume = searchParams.get('resume') === 'true'
+  const paramDate = searchParams.get('date') || new Date().toISOString().split('T')[0]
 
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -75,10 +76,9 @@ function ChatContent() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const todayISO = new Date().toISOString().split('T')[0]
     await supabase.from('episodes').insert({
       user_id: user.id,
-      date: todayISO,
+      date: paramDate,
       seed_text: seedText.trim(),
       chat_log: [],
       summary_text: null,
@@ -130,10 +130,9 @@ function ChatContent() {
         summary_text: summaryText,
       }).eq('id', paramEpisodeId)
     } else {
-      const todayISO = new Date().toISOString().split('T')[0]
       await supabase.from('episodes').insert({
         user_id: user.id,
-        date: todayISO,
+        date: paramDate,
         seed_text: seedText.trim(),
         chat_log: messages,
         summary_text: summaryText,

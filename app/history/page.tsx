@@ -8,6 +8,7 @@ type Journal = {
   id: string
   date: string
   summary: string
+  other_events: string[] | null
   created_at: string
 }
 
@@ -25,7 +26,7 @@ export default function HistoryPage() {
 
       const { data } = await supabase
         .from('journals')
-        .select('id, date, summary, created_at')
+        .select('id, date, summary, other_events, created_at')
         .order('date', { ascending: false })
         .limit(30)
 
@@ -41,9 +42,11 @@ export default function HistoryPage() {
     })
   }
 
-  function getPreview(summary: string) {
+  function getGoodThings(summary: string): string[] {
+    const matches = summary.match(/[①②③]\s*(.+)/g)
+    if (matches) return matches.map(m => m.replace(/^[①②③]\s*/, '').trim())
     const lines = summary.split('\n').filter(l => l.trim())
-    return lines.slice(0, 2).join(' ').slice(0, 60) + '…'
+    return lines.slice(0, 3)
   }
 
   return (
@@ -85,11 +88,7 @@ export default function HistoryPage() {
               style={{ cursor: 'pointer' }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: 'var(--main-dark)',
-                }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--main-dark)' }}>
                   {formatDate(j.date)}
                 </div>
                 <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>
@@ -98,12 +97,40 @@ export default function HistoryPage() {
               </div>
 
               {expanded === j.id ? (
-                <div style={{ marginTop: 12, whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.85 }}>
-                  {j.summary}
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--main-dark)', marginBottom: 6 }}>良かったこと</div>
+                  {getGoodThings(j.summary).map((item, i) => (
+                    <div key={i} style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 2 }}>
+                      ✓ {item}
+                    </div>
+                  ))}
+
+                  {(j.other_events ?? []).length > 0 && (
+                    <>
+                      <div style={{ height: 1, background: '#E2E8F0', margin: '10px 0' }} />
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>その他</div>
+                      {(j.other_events ?? []).map((ev, i) => (
+                        <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                          ・{ev}
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  <div style={{ marginTop: 12, borderTop: '1px solid #E2E8F0', paddingTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>全文</div>
+                    <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.85, color: 'var(--text)' }}>
+                      {j.summary}
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  {getPreview(j.summary)}
+                <div style={{ marginTop: 6 }}>
+                  {getGoodThings(j.summary).map((item, i) => (
+                    <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                      ✓ {item}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -112,7 +139,7 @@ export default function HistoryPage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#CBD5E0', fontSize: 11, padding: '8px 0 12px' }}>
-        v1.2.0 — 2026-06-20
+        v1.3.0 — 2026-06-21
       </p>
     </div>
   )
