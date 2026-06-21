@@ -12,6 +12,7 @@ function ChatContent() {
   const paramEpisodeId = searchParams.get('episodeId') || null
   const paramResume = searchParams.get('resume') === 'true'
   const paramDate = searchParams.get('date') || new Date().toISOString().split('T')[0]
+  const paramScheduleId = searchParams.get('scheduleId') || null
 
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -136,6 +137,7 @@ function ChatContent() {
         seed_text: seedText.trim(),
         chat_log: messages,
         summary_text: summaryText,
+        schedule_id: paramScheduleId,
       })
     }
 
@@ -160,10 +162,10 @@ function ChatContent() {
         </button>
         <div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>
-            {paramResume ? '会話を再開する' : paramEpisodeId ? 'メモから日記を作る' : '出来事を記録する'}
+            {paramResume ? '会話を再開する' : paramEpisodeId ? 'メモから日記を作る' : paramScheduleId ? '予定の振り返りを記録する' : '出来事を記録する'}
           </div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            {paramResume ? '続きをAIと話しましょう' : paramEpisodeId ? 'AIが話を広げてくれます' : 'メモだけ残すか、AIと話を広げるか選べます'}
+            {paramResume ? '続きをAIと話しましょう' : paramEpisodeId ? 'AIが話を広げてくれます' : paramScheduleId ? '今日はどうでしたか？AIと話してみましょう' : 'メモだけ残すか、AIと話を広げるか選べます'}
           </div>
         </div>
       </header>

@@ -139,7 +139,7 @@ export default function HistoryPage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '8px 0 12px' }}>
-        v1.4.0 — 2026-06-21 09:32
+        v1.5.0 — 2026-06-21 10:15
       </p>
     </div>
   )

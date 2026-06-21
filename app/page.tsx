@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -10,6 +10,7 @@ type Episode = {
   summary_text: string | null
   chat_log: { role: string; parts: string }[]
   created_at: string
+  schedule_id: string | null
 }
 
 type Schedule = {
@@ -44,7 +45,7 @@ export default function HomePage() {
     const [{ data: epData }, { data: scData }] = await Promise.all([
       supabase
         .from('episodes')
-        .select('id, seed_text, summary_text, chat_log, created_at')
+        .select('id, seed_text, summary_text, chat_log, created_at, schedule_id')
         .eq('date', date)
         .order('created_at', { ascending: false }),
       supabase
@@ -58,6 +59,19 @@ export default function HomePage() {
     setSchedules(scData || [])
     setLoading(false)
   }, [])
+
+  const episodesBySchedule = useMemo(() => {
+    const map = new Map<string, Episode>()
+    for (const ep of episodes) {
+      if (ep.schedule_id) map.set(ep.schedule_id, ep)
+    }
+    return map
+  }, [episodes])
+
+  const visibleEpisodes = useMemo(
+    () => episodes.filter(ep => !ep.schedule_id),
+    [episodes]
+  )
 
   useEffect(() => {
     loadData(selectedDate)
@@ -124,6 +138,11 @@ export default function HomePage() {
     setSchedules(prev => prev.map(s =>
       s.id === sc.id ? { ...s, status: newStatus } : s
     ))
+
+    // 完了にした瞬間、まだ振り返り(episode)が無ければAIとの会話へ誘導する
+    if (newStatus === 'completed' && !episodesBySchedule.has(sc.id)) {
+      router.push(`/chat?seed=${encodeURIComponent(sc.content)}&scheduleId=${sc.id}&date=${selectedDate}`)
+    }
   }
 
   async function deleteSchedule(id: string) {
@@ -254,43 +273,74 @@ export default function HomePage() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {schedules.map(sc => (
-                <div key={sc.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button
-                    onClick={() => toggleSchedule(sc)}
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 4,
-                      border: sc.status === 'completed' ? '2px solid var(--main)' : '2px solid #CBD5E0',
-                      background: sc.status === 'completed' ? 'var(--main)' : 'white',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontSize: 13,
-                    }}
-                  >
-                    {sc.status === 'completed' ? '✓' : ''}
-                  </button>
-                  <span style={{
-                    fontSize: 14,
-                    flex: 1,
-                    color: sc.status === 'completed' ? 'var(--text-muted)' : 'var(--text)',
-                    textDecoration: sc.status === 'completed' ? 'line-through' : 'none',
-                  }}>
-                    {sc.content}
-                  </span>
-                  <button
-                    onClick={() => deleteSchedule(sc.id)}
-                    style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+              {schedules.map(sc => {
+                const linkedEpisode = episodesBySchedule.get(sc.id)
+                return (
+                  <div key={sc.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        onClick={() => toggleSchedule(sc)}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
+                          border: sc.status === 'completed' ? '2px solid var(--main)' : '2px solid #CBD5E0',
+                          background: sc.status === 'completed' ? 'var(--main)' : 'white',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'white',
+                          fontSize: 13,
+                        }}
+                      >
+                        {sc.status === 'completed' ? '✓' : ''}
+                      </button>
+                      <span style={{
+                        fontSize: 14,
+                        flex: 1,
+                        color: sc.status === 'completed' ? 'var(--text-muted)' : 'var(--text)',
+                        textDecoration: sc.status === 'completed' ? 'line-through' : 'none',
+                      }}>
+                        {sc.content}
+                      </span>
+                      <button
+                        onClick={() => deleteSchedule(sc.id)}
+                        style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {sc.status === 'completed' && linkedEpisode && (
+                      <div style={{ marginLeft: 30, padding: '8px 10px', background: '#F7FAFC', borderRadius: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--main-dark)', marginBottom: 4 }}>振り返り</div>
+                        {linkedEpisode.summary_text && (
+                          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                            {linkedEpisode.summary_text}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                          <button
+                            className="btn-secondary"
+                            onClick={() => router.push(`/chat?episodeId=${linkedEpisode.id}&resume=true`)}
+                            style={{ fontSize: 12, minHeight: 32, padding: '4px 10px' }}
+                          >
+                            💬 AIと話を続ける
+                          </button>
+                          <button
+                            onClick={() => deleteEpisode(linkedEpisode.id)}
+                            style={{ background: 'none', border: 'none', color: '#CBD5E0', fontSize: 12, cursor: 'pointer', padding: 0 }}
+                          >
+                            振り返りを削除
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -303,19 +353,19 @@ export default function HomePage() {
             </button>
 
             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-muted)' }}>
-              {isToday ? '今日' : 'この日'}の記録（{episodes.length}件）
+              {isToday ? '今日' : 'この日'}の記録（{visibleEpisodes.length}件）
             </div>
 
             {loading ? (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>読み込み中…</div>
-            ) : episodes.length === 0 ? (
+            ) : visibleEpisodes.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
                 <div>記録がありません</div>
                 <div style={{ fontSize: 13, marginTop: 4 }}>上のボタンから記録を始めましょう</div>
               </div>
             ) : (
-              episodes.map((ep, i) => (
+              visibleEpisodes.map((ep, i) => (
                 <div key={ep.id} className="card" style={{ position: 'relative' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{
@@ -327,7 +377,7 @@ export default function HomePage() {
                       fontWeight: 600,
                       marginBottom: 8,
                     }}>
-                      出来事 {episodes.length - i}
+                      出来事 {visibleEpisodes.length - i}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {editingId !== ep.id && (
@@ -447,7 +497,7 @@ export default function HomePage() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '4px 0 12px' }}>
-        v1.4.0 — 2026-06-21 09:32
+        v1.5.0 — 2026-06-21 10:15
       </p>
     </div>
   )

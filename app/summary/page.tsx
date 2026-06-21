@@ -30,14 +30,14 @@ function SummaryContent() {
 
     const { data: episodes } = await supabase
       .from('episodes')
-      .select('seed_text, summary_text')
+      .select('seed_text, summary_text, schedule_id')
       .eq('date', dateParam)
       .order('created_at', { ascending: true })
 
-    // completedなスケジュールも候補に含める
+    // completedなスケジュールも候補に含める（AI会話で日記化済みのものはepisodes側に含まれるため除外）
     const { data: schedules } = await supabase
       .from('schedule')
-      .select('content')
+      .select('id, content')
       .eq('date', dateParam)
       .eq('status', 'completed')
 
@@ -47,7 +47,10 @@ function SummaryContent() {
       return
     }
 
-    const completedSchedules = (schedules || []).map(s => s.content)
+    const linkedScheduleIds = new Set(episodes.map(e => e.schedule_id).filter(Boolean))
+    const completedSchedules = (schedules || [])
+      .filter(s => !linkedScheduleIds.has(s.id))
+      .map(s => s.content)
 
     const res = await fetch('/api/summarize', {
       method: 'POST',
@@ -155,7 +158,7 @@ function SummaryContent() {
       </div>
 
       <p style={{ textAlign: 'center', color: '#000', fontSize: 11, padding: '8px 0 12px' }}>
-        v1.4.0 — 2026-06-21 09:32
+        v1.5.0 — 2026-06-21 10:15
       </p>
     </div>
   )
