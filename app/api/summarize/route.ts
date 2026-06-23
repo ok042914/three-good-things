@@ -1,7 +1,5 @@
-import { GoogleGenAI } from '@google/genai'
 import { NextRequest, NextResponse } from 'next/server'
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
+import { generateWithFallback } from '@/lib/gemini'
 
 export async function POST(req: NextRequest) {
   try {
@@ -99,14 +97,13 @@ ${formattedDate}
 【参考】今回の全イベントタイトル一覧（選定の参考）:
 ${allEventTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
+    const response = await generateWithFallback({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      taskType: 'complex',
     })
 
     const raw = (response.text ?? '').trim()
 
-    // OTHER_EVENTSブロックを抽出
     const otherEventsMatch = raw.match(/---OTHER_EVENTS_START---\s*([\s\S]*?)\s*---OTHER_EVENTS_END---/)
     let otherEvents: string[] = []
     if (otherEventsMatch) {
@@ -117,7 +114,6 @@ ${allEventTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
       }
     }
 
-    // summaryからOTHER_EVENTSブロックを除去
     const summary = raw.replace(/---OTHER_EVENTS_START---[\s\S]*?---OTHER_EVENTS_END---/, '').trim()
 
     return NextResponse.json({ summary, otherEvents })

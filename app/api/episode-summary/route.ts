@@ -1,7 +1,5 @@
-import { GoogleGenAI } from '@google/genai'
 import { NextRequest, NextResponse } from 'next/server'
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
+import { generateWithFallback } from '@/lib/gemini'
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,9 +27,9 @@ ${conversationText}
 
 【日記文のみ出力してください（前置き不要）】`
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
+    const response = await generateWithFallback({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      taskType: 'lite',
     })
 
     const summaryText = (response.text ?? '').trim()

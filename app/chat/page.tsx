@@ -21,6 +21,8 @@ function ChatContent() {
   const [loading, setLoading] = useState(false)
   const [readyToSave, setReadyToSave] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
+  const [lastInput, setLastInput] = useState<string>('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -56,19 +58,33 @@ function ChatContent() {
   async function startChatWithSeed(seed: string) {
     setPhase('chat')
     setLoading(true)
+    setApiError(null)
 
     const firstMessage: Message = { role: 'user', parts: seed }
     setMessages([firstMessage])
+    setLastInput(seed)
 
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: [], message: seed }),
-    })
-    const data = await res.json()
-    setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
-    setReadyToSave(data.readyToSave)
-    setLoading(false)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: [], message: seed }),
+      })
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
+      const data = await res.json()
+      setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
+      setReadyToSave(data.readyToSave)
+      setApiError(null)
+    } catch {
+      setApiError('通信エラーが発生しました。時間をおいて再度お試しください。')
+      // 最初のユーザーメッセージだけ残してAI返答を待機状態のままにする
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function saveMemo() {
@@ -92,23 +108,42 @@ function ChatContent() {
     startChatWithSeed(seedText.trim())
   }
 
-  async function sendMessage() {
-    if (!input.trim() || loading) return
-    const userMsg: Message = { role: 'user', parts: input.trim() }
+  async function sendMessage(overrideInput?: string) {
+    const text = (overrideInput ?? input).trim()
+    if (!text || loading) return
+
+    const userMsg: Message = { role: 'user', parts: text }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setInput('')
+    setLastInput(text)
     setLoading(true)
+    setApiError(null)
 
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: messages, message: input.trim() }),
-    })
-    const data = await res.json()
-    setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
-    setReadyToSave(data.readyToSave)
-    setLoading(false)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: messages, message: text }),
+      })
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
+      const data = await res.json()
+      setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
+      setReadyToSave(data.readyToSave)
+      setApiError(null)
+    } catch {
+      setApiError('通信エラーが発生しました。時間をおいて再度お試しください。')
+      // 送信済みユーザーメッセージは残したまま入力欄にテキストを戻す
+      setInput(text)
+      // 追加したユーザーメッセージを取り消す
+      setMessages(messages)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function saveEpisode() {
@@ -125,7 +160,6 @@ function ChatContent() {
     if (!user) { router.push('/login'); return }
 
     if (paramEpisodeId) {
-      // 既存の一言メモを日記として更新
       await supabase.from('episodes').update({
         chat_log: messages,
         summary_text: summaryText,
@@ -241,6 +275,42 @@ function ChatContent() {
                 </div>
               </div>
             )}
+
+            {apiError && (
+              <div style={{
+                background: '#FFF5F5',
+                border: '1px solid #FEB2B2',
+                borderRadius: 12,
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}>
+                <p style={{ margin: 0, fontSize: 13, color: '#C53030', lineHeight: 1.6 }}>
+                  {apiError}
+                </p>
+                <button
+                  onClick={() => sendMessage(lastInput)}
+                  disabled={loading}
+                  style={{
+                    background: loading ? '#FEB2B2' : '#C53030',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '10px 16px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    minHeight: 44,
+                    opacity: loading ? 0.6 : 1,
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {loading ? '送信中…' : 'もう一度送信する'}
+                </button>
+              </div>
+            )}
+
             <div ref={bottomRef} />
           </div>
 
@@ -276,7 +346,7 @@ function ChatContent() {
                 style={{ minHeight: 44, flex: 1 }}
               />
               <button
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!input.trim() || loading}
                 style={{
                   background: 'var(--main)',
