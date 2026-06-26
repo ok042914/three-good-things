@@ -9,7 +9,6 @@ function SummaryContent() {
   const dateParam = searchParams.get('date') || new Date().toISOString().split('T')[0]
 
   const [summary, setSummary] = useState('')
-  const [otherEvents, setOtherEvents] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -70,7 +69,6 @@ function SummaryContent() {
       return
     }
     setSummary(data.summary)
-    setOtherEvents(data.otherEvents ?? [])
     setLoading(false)
   }
 
@@ -83,7 +81,6 @@ function SummaryContent() {
       user_id: user.id,
       date: dateParam,
       summary,
-      other_events: otherEvents,
     }, { onConflict: 'user_id,date' })
 
     setSaved(true)
@@ -91,11 +88,7 @@ function SummaryContent() {
   }
 
   async function copyToClipboard() {
-    let text = summary
-    if (otherEvents.length > 0) {
-      text += '\n\n【その他】\n\n' + otherEvents.map(ev => `・${ev}`).join('\n\n')
-    }
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(summary)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -147,15 +140,6 @@ function SummaryContent() {
             <div className="card" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.85, fontSize: 14 }}>
               {summary}
             </div>
-
-            {otherEvents.length > 0 && (
-              <div className="card" style={{ background: '#F7FAFC' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>その他の出来事</div>
-                {otherEvents.map((ev, i) => (
-                  <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.8 }}>・{ev}</div>
-                ))}
-              </div>
-            )}
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn-secondary" onClick={copyToClipboard} style={{ flex: 1 }}>

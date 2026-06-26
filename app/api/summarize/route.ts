@@ -24,6 +24,14 @@ export async function POST(req: NextRequest) {
       year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
     })
 
+    const totalEvents = allEventTitles.length
+    const numberedFormat = allEventTitles
+      .map((_, i) => {
+        const num = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'][i] ?? `${i + 1}.`
+        return `━━━━━━━━━━━━━━━━\n${num} （タイトル：出来事の内容を20文字以内で要約。入力そのままにせず簡潔に）\n━━━━━━━━━━━━━━━━\n（3〜5行の日記文）`
+      })
+      .join('\n\n')
+
     const prompt = `あなたは作家ではありません。
 あなたの役割は、ユーザーの記憶を正確に整理し、日記として記録することです。
 
@@ -54,69 +62,29 @@ export async function POST(req: NextRequest) {
 - 最高の一日だった
 - （これらに類する誇張・脚色表現全般）
 
-ユーザーが今日記録したエピソードから、最もよかった3つを選び、
-それぞれ3〜5行の日記文として整理してください。
-エピソードが3件未満の場合は全件を使う。日本語のみ。
+ユーザーが今日記録した全${totalEvents}件のエピソードを、すべて日記文として整理してください。
+1件も省略しないこと。日本語のみ。
 
 【今日のエピソード】
 ${episodesText}${schedulesText}
 
 【以下のフォーマットで出力してください】
-【今日の3つのよかったこと】
+【今日のよかったこと】
 ${formattedDate}
 
-━━━━━━━━━━━━━━━━
-① （タイトル：出来事の内容を20文字以内で要約。入力そのままにせず簡潔に）
-━━━━━━━━━━━━━━━━
-（5〜10行の日記文）
+${numberedFormat}
 
-━━━━━━━━━━━━━━━━
-② （タイトル：出来事の内容を20文字以内で要約。入力そのままにせず簡潔に）
-━━━━━━━━━━━━━━━━
-（5〜10行の日記文）
-
-━━━━━━━━━━━━━━━━
-③ （タイトル：出来事の内容を20文字以内で要約。入力そのままにせず簡潔に）
-━━━━━━━━━━━━━━━━
-（5〜10行の日記文）
-
-✨ （今日の一言：30〜50字の励ましや気づき）
-
-次に、3つに選ばれなかったイベントを以下のブロックで出力してください。
-選ばれたイベント以外のすべてを、以下のルールで記載してください。
-- ユーザーが書いた内容をなるべくそのまま残す
-- 事実を自然な文章に整理する（感情を創作しない、誇張しない、ポエム調にしない）
-- 1件あたり最大100文字程度、2〜3文まで可（過度に短縮しない）
-- 箇条書き表示のため、各件を1つの文字列として配列要素にする
-選ばれなかったイベントが0件の場合は空の配列 [] を出力してください。
-
----OTHER_EVENTS_START---
-["（イベント1）", "（イベント2）"]
----OTHER_EVENTS_END---
-
-【参考】今回の全イベントタイトル一覧（選定の参考）:
-${allEventTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
+✨ （今日の一言：30〜50字の励ましや気づき）`
 
     const response = await generateWithFallback({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      taskType: 'complex',
+      taskType: 'normal',
+      allowPro: true,
     })
 
-    const raw = (response.text ?? '').trim()
+    const summary = (response.text ?? '').trim()
 
-    const otherEventsMatch = raw.match(/---OTHER_EVENTS_START---\s*([\s\S]*?)\s*---OTHER_EVENTS_END---/)
-    let otherEvents: string[] = []
-    if (otherEventsMatch) {
-      try {
-        otherEvents = JSON.parse(otherEventsMatch[1].trim())
-      } catch {
-        otherEvents = []
-      }
-    }
-
-    const summary = raw.replace(/---OTHER_EVENTS_START---[\s\S]*?---OTHER_EVENTS_END---/, '').trim()
-
-    return NextResponse.json({ summary, otherEvents })
+    return NextResponse.json({ summary, otherEvents: [] })
   } catch (error) {
     const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
     console.error('summarize error:', msg)
