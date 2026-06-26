@@ -4,12 +4,20 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
 
 const MODELS = {
   main: 'gemini-2.5-flash',
-  lite: 'gemini-2.5-flash-lite-preview-06-17',
+  lite: 'gemini-2.0-flash-lite',
   pro: 'gemini-2.5-pro',
 }
 
 const RETRY_DELAY_MS = 1000
 const MAX_RETRIES = 2
+
+// flash/lite が全滅したときに投げる特殊エラー
+export class NeedsProConfirmationError extends Error {
+  constructor() {
+    super('NEEDS_PRO_CONFIRMATION')
+    this.name = 'NeedsProConfirmationError'
+  }
+}
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -21,12 +29,14 @@ type GenerateConfig = Record<string, unknown>
 type GenerateOptions = {
   contents: ContentItem[]
   config?: GenerateConfig
-  // 'lite': 軽量タスク（要約など）, 'complex': 複雑なタスク（最終手段でpro）, 'normal': 通常
-  taskType?: 'lite' | 'complex' | 'normal'
+  // 'lite': 軽量タスク（要約など）, 'normal': 通常
+  taskType?: 'lite' | 'normal'
+  // true のときのみ pro フォールバックを実行する（デフォルト false）
+  allowPro?: boolean
 }
 
 export async function generateWithFallback(options: GenerateOptions) {
-  const { contents, config, taskType = 'normal' } = options
+  const { contents, config, taskType = 'normal', allowPro = false } = options
 
   // メインモデルで最大2回リトライ（初回含め計3回）
   let lastError: unknown
@@ -45,24 +55,26 @@ export async function generateWithFallback(options: GenerateOptions) {
     }
   }
 
-  // liteフォールバック（complexでない場合）
-  if (taskType !== 'complex') {
-    console.warn(`[gemini] falling back to ${MODELS.lite}`)
-    try {
-      const response = await ai.models.generateContent({
-        model: MODELS.lite,
-        contents,
-        config,
-      })
-      return response
-    } catch (error) {
-      console.error(`[gemini] lite fallback failed:`, error instanceof Error ? error.message : error)
-      lastError = error
-    }
+  // liteフォールバック
+  console.warn(`[gemini] falling back to ${MODELS.lite}`)
+  try {
+    const response = await ai.models.generateContent({
+      model: MODELS.lite,
+      contents,
+      config,
+    })
+    return response
+  } catch (error) {
+    console.error(`[gemini] lite fallback failed:`, error instanceof Error ? error.message : error)
+    lastError = error
   }
 
-  // 最終手段: pro（無料枠が厳しいため最後のみ）
-  console.warn(`[gemini] falling back to ${MODELS.pro} as last resort`)
+  // pro フォールバック（承認済みの場合のみ）
+  if (!allowPro) {
+    throw new NeedsProConfirmationError()
+  }
+
+  console.warn(`[gemini] falling back to ${MODELS.pro} (user approved)`)
   const response = await ai.models.generateContent({
     model: MODELS.pro,
     contents,
