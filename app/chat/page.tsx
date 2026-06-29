@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
+import { todayJST } from '@/lib/date'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 type Message = { role: 'user' | 'model'; parts: string }
@@ -11,7 +12,7 @@ function ChatContent() {
   const paramSeed = searchParams.get('seed') || ''
   const paramEpisodeId = searchParams.get('episodeId') || null
   const paramResume = searchParams.get('resume') === 'true'
-  const paramDate = searchParams.get('date') || new Date().toISOString().split('T')[0]
+  const paramDate = searchParams.get('date') || todayJST()
   const paramScheduleId = searchParams.get('scheduleId') || null
 
   const [messages, setMessages] = useState<Message[]>([])
@@ -23,6 +24,8 @@ function ChatContent() {
   const [saving, setSaving] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [lastInput, setLastInput] = useState<string>('')
+  const [depthLevel, setDepthLevel] = useState(3)
+  const [needsProConfirmation, setNeedsProConfirmation] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -32,12 +35,24 @@ function ChatContent() {
   }, [messages])
 
   useEffect(() => {
+    loadDepthLevel()
     if (paramResume && paramEpisodeId) {
       loadAndResumeChat()
     } else if (paramSeed) {
       startChatWithSeed(paramSeed)
     }
   }, [])
+
+  async function loadDepthLevel() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('user_settings')
+      .select('depth_level')
+      .eq('user_id', user.id)
+      .single()
+    if (data) setDepthLevel(data.depth_level)
+  }
 
   async function loadAndResumeChat() {
     setLoading(true)
@@ -55,10 +70,11 @@ function ChatContent() {
     setLoading(false)
   }
 
-  async function startChatWithSeed(seed: string) {
+  async function startChatWithSeed(seed: string, allowPro = false) {
     setPhase('chat')
     setLoading(true)
     setApiError(null)
+    setNeedsProConfirmation(false)
 
     const firstMessage: Message = { role: 'user', parts: seed }
     setMessages([firstMessage])
@@ -68,7 +84,7 @@ function ChatContent() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history: [], message: seed }),
+        body: JSON.stringify({ history: [], message: seed, depthLevel, allowPro }),
       })
 
       if (!res.ok) {
@@ -76,12 +92,15 @@ function ChatContent() {
       }
 
       const data = await res.json()
+      if (data.needsProConfirmation) {
+        setNeedsProConfirmation(true)
+        return
+      }
       setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
       setReadyToSave(data.readyToSave)
       setApiError(null)
     } catch {
       setApiError('通信エラーが発生しました。時間をおいて再度お試しください。')
-      // 最初のユーザーメッセージだけ残してAI返答を待機状態のままにする
     } finally {
       setLoading(false)
     }
@@ -93,10 +112,14 @@ function ChatContent() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
+    // 一言メモの場合は先頭20文字をtitleとして使用
+    const title = seedText.trim().slice(0, 20)
+
     await supabase.from('episodes').insert({
       user_id: user.id,
       date: paramDate,
       seed_text: seedText.trim(),
+      title,
       chat_log: [],
       summary_text: null,
     })
@@ -108,7 +131,7 @@ function ChatContent() {
     startChatWithSeed(seedText.trim())
   }
 
-  async function sendMessage(overrideInput?: string) {
+  async function sendMessage(overrideInput?: string, allowPro = false) {
     const text = (overrideInput ?? input).trim()
     if (!text || loading) return
 
@@ -119,12 +142,13 @@ function ChatContent() {
     setLastInput(text)
     setLoading(true)
     setApiError(null)
+    setNeedsProConfirmation(false)
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history: messages, message: text }),
+        body: JSON.stringify({ history: messages, message: text, depthLevel, allowPro }),
       })
 
       if (!res.ok) {
@@ -132,14 +156,19 @@ function ChatContent() {
       }
 
       const data = await res.json()
+      if (data.needsProConfirmation) {
+        setNeedsProConfirmation(true)
+        // 追加したユーザーメッセージを取り消す
+        setMessages(messages)
+        setInput(text)
+        return
+      }
       setMessages(prev => [...prev, { role: 'model', parts: data.reply }])
       setReadyToSave(data.readyToSave)
       setApiError(null)
     } catch {
       setApiError('通信エラーが発生しました。時間をおいて再度お試しください。')
-      // 送信済みユーザーメッセージは残したまま入力欄にテキストを戻す
       setInput(text)
-      // 追加したユーザーメッセージを取り消す
       setMessages(messages)
     } finally {
       setLoading(false)
@@ -154,7 +183,10 @@ function ChatContent() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chatLog: messages }),
     })
-    const { summaryText } = await summaryRes.json()
+    const { summaryText, title: generatedTitle } = await summaryRes.json()
+
+    // フォールバック: LLMがtitleを生成できなかった場合はseed_textの先頭20文字
+    const title = generatedTitle || seedText.trim().slice(0, 20)
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
@@ -163,12 +195,14 @@ function ChatContent() {
       await supabase.from('episodes').update({
         chat_log: messages,
         summary_text: summaryText,
+        title,
       }).eq('id', paramEpisodeId)
     } else {
       await supabase.from('episodes').insert({
         user_id: user.id,
         date: paramDate,
         seed_text: seedText.trim(),
+        title,
         chat_log: messages,
         summary_text: summaryText,
         schedule_id: paramScheduleId,
@@ -272,6 +306,64 @@ function ChatContent() {
                 <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--main)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🌟</div>
                 <div style={{ background: 'white', borderRadius: '16px 16px 16px 4px', padding: '10px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
                   <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>入力中…</span>
+                </div>
+              </div>
+            )}
+
+            {needsProConfirmation && (
+              <div style={{
+                background: '#FFFBEB',
+                border: '1px solid #F6E05E',
+                borderRadius: 12,
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}>
+                <p style={{ margin: 0, fontSize: 13, color: '#744210', lineHeight: 1.6 }}>
+                  通常モデルが混雑しています。高性能モデル（gemini-2.5-pro）で試しますか？<br />
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>※ 無料枠の消費が増えます</span>
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      setNeedsProConfirmation(false)
+                      if (messages.length === 0) {
+                        startChatWithSeed(lastInput, true)
+                      } else {
+                        sendMessage(lastInput, true)
+                      }
+                    }}
+                    disabled={loading}
+                    style={{
+                      background: '#D97706',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '10px 16px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      minHeight: 44,
+                    }}
+                  >
+                    高性能モデルで試す
+                  </button>
+                  <button
+                    onClick={() => setNeedsProConfirmation(false)}
+                    style={{
+                      background: 'transparent',
+                      color: '#744210',
+                      border: '1px solid #F6E05E',
+                      borderRadius: 8,
+                      padding: '10px 16px',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      minHeight: 44,
+                    }}
+                  >
+                    やめる
+                  </button>
                 </div>
               </div>
             )}

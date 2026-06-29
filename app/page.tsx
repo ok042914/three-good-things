@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
+import { todayJST } from '@/lib/date'
 import { useRouter } from 'next/navigation'
 
 type Episode = {
   id: string
+  title: string | null
   seed_text: string
   summary_text: string | null
   chat_log: { role: string; parts: string }[]
@@ -21,7 +23,7 @@ type Schedule = {
 }
 
 export default function HomePage() {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState(todayJST())
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,7 +37,7 @@ export default function HomePage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const todayISO = new Date().toISOString().split('T')[0]
+  const todayISO = todayJST()
 
   const loadData = useCallback(async (date: string) => {
     setLoading(true)
@@ -45,7 +47,7 @@ export default function HomePage() {
     const [{ data: epData }, { data: scData }] = await Promise.all([
       supabase
         .from('episodes')
-        .select('id, seed_text, summary_text, chat_log, created_at, schedule_id')
+        .select('id, title, seed_text, summary_text, chat_log, created_at, schedule_id')
         .eq('date', date)
         .order('created_at', { ascending: false }),
       supabase
@@ -436,7 +438,7 @@ export default function HomePage() {
                     </div>
                   ) : (
                     <>
-                      <div style={{ fontWeight: 600, marginBottom: ep.summary_text ? 6 : 0 }}>{ep.seed_text}</div>
+                      <div style={{ fontWeight: 600, marginBottom: ep.summary_text ? 6 : 0 }}>{ep.title || ep.seed_text}</div>
                       {ep.summary_text && (
                         <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>{ep.summary_text}</div>
                       )}
@@ -483,6 +485,9 @@ export default function HomePage() {
       <div style={{ padding: 16, borderTop: '1px solid #E2E8F0', background: 'white', display: 'flex', gap: 8 }}>
         <button className="btn-secondary" onClick={() => router.push('/history')} style={{ flex: 1 }}>
           📖 履歴
+        </button>
+        <button className="btn-secondary" onClick={() => router.push('/settings')} style={{ flex: 1 }}>
+          ⚙️ 設定
         </button>
         {!isFuture && (
           <button
