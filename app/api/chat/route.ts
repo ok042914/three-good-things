@@ -30,10 +30,30 @@ const DEPTH_CONFIG: Record<number, { minTurns: number; maxTurns: number; instruc
   },
 }
 
+function filterThoughts(text: string): string {
+  return text
+    .split('\n')
+    .filter(line => {
+      const trimmed = line.trim()
+      if (/^THOUGHT:/i.test(trimmed)) return false
+      if (/^思考[:：]/i.test(trimmed)) return false
+      if (/^質問の候補[:：]/i.test(trimmed)) return false
+      if (/^ルール[:：]?\s/.test(trimmed)) return false
+      return true
+    })
+    .join('\n')
+    .trim()
+}
+
 function buildSystemInstruction(depthLevel: number): string {
   const config = DEPTH_CONFIG[depthLevel] ?? DEPTH_CONFIG[3]
   return `あなたは日記の記録を手伝うアシスタントです。
 ユーザーが話した出来事を、後から読み返せる日記として残すことが目的です。
+
+絶対に守ること:
+- THOUGHT:、思考:、質問の候補:、ルール: などの内部メタ情報を出力しない
+- ユーザーへの返答テキストのみを出力する
+- 内部思考・推論過程・候補リストはすべて非表示にする
 
 ルール:
 - ユーザーの言葉をそのまま繰り返さない（オウム返し禁止）
@@ -73,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     const rawReply = response.text ?? ''
     const readyToSave = rawReply.includes('[READY_TO_SAVE]')
-    const reply = rawReply.replace('[READY_TO_SAVE]', '').trim()
+    const reply = filterThoughts(rawReply.replace('[READY_TO_SAVE]', ''))
 
     return NextResponse.json({ reply, readyToSave })
   } catch (error) {
