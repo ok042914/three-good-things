@@ -31,18 +31,24 @@ const DEPTH_CONFIG: Record<number, { minTurns: number; maxTurns: number; instruc
 }
 
 function filterThoughts(text: string): string {
-  return text
-    .split('\n')
-    .filter(line => {
-      const trimmed = line.trim()
-      if (/^THOUGHT:/i.test(trimmed)) return false
-      if (/^思考[:：]/i.test(trimmed)) return false
-      if (/^質問の候補[:：]/i.test(trimmed)) return false
-      if (/^ルール[:：]?\s/.test(trimmed)) return false
-      return true
-    })
-    .join('\n')
-    .trim()
+  const lines = text.split('\n')
+  const filtered = lines.filter(line => {
+    const t = line.trim()
+    if (!t) return false
+    // 思考・メタ情報パターン
+    if (/^THOUGHT:/i.test(t)) return false
+    if (/^思考[:：]/i.test(t)) return false
+    if (/^質問(の候補|候補)[:：]/i.test(t)) return false
+    if (/^ルール[:：]?\s/.test(t)) return false
+    if (/^候補[:：]/.test(t)) return false
+    // 「〜と考えられます」「〜と判断しました」のような思考説明文
+    if (/（考え|判断|検討|選択|思考|整理）/.test(t)) return false
+    if (/\d+\.\s/.test(t) && /候補|選択肢|質問/.test(text)) return false
+    return true
+  })
+
+  // 空行を圧縮して返す
+  return filtered.join('\n').replace(/\n{2,}/g, '\n').trim()
 }
 
 function buildSystemInstruction(depthLevel: number): string {
@@ -50,10 +56,12 @@ function buildSystemInstruction(depthLevel: number): string {
   return `あなたは日記の記録を手伝うアシスタントです。
 ユーザーが話した出来事を、後から読み返せる日記として残すことが目的です。
 
-絶対に守ること:
-- THOUGHT:、思考:、質問の候補:、ルール: などの内部メタ情報を出力しない
-- ユーザーへの返答テキストのみを出力する
-- 内部思考・推論過程・候補リストはすべて非表示にする
+【出力形式の厳守】
+- ユーザーへの返答文のみを出力する
+- 思考過程・質問候補・判断理由・選択肢・検討内容を一切出力しない
+- 「〜と考えられます」「〜と判断しました」「情報が揃いました」などの地の文禁止
+- 番号付きリスト（1. 2. 3.）形式の候補出力禁止
+- 出力はユーザーへの返答のみ。前置きも後書きも不要
 
 ルール:
 - ユーザーの言葉をそのまま繰り返さない（オウム返し禁止）
@@ -86,7 +94,10 @@ export async function POST(req: NextRequest) {
 
     const response = await generateWithFallback({
       contents,
-      config: { systemInstruction },
+      config: {
+        systemInstruction,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
       taskType: 'normal',
       allowPro,
     })
